@@ -1,0 +1,73 @@
+* About
+
+
+
+* Dependencies
+
+The script checks if required binaries are available on the fly. The full set of
+packages to have pre-installed is as such (you likely have some already):
+=xorriso=, =xxd=, =file=, =cpio=, =squashfs-tools=, =kmod=, =lz4=, =xz-utils=,
+=zstd=, =pv=. Also, [[https://github.com/slowpeek/unmkinitramfs-turbo/blob/master/unmkinitramfs-turbo][unmkinitramfs-turbo]] should be installed into PATH.
+
+* Usage
+
+#+begin_example
+  ubuntu-remaster-bbb [options] input output
+#+end_example
+
+* Sample run
+
+
+
+* Grub setup
+
+
+
+* Docker image
+
+*Notice*: the =Dockerfile= uses anvanced syntax. You may need to install
+=docker-buildx= package.
+
+You can build the image like this (upon entering the repo dir):
+
+#+begin_example
+  docker build -t ubuntu-remaster-bbb .
+#+end_example
+
+The entry point is set to the script.
+
+* Docker wrapper
+
+=ubuntu-remaster-bbb.docker= makes it easy to run the docker image. It mounts
+the input file (read only) and output dir into the
+container. =ubuntu-remaster-bbb= is the assumed name for the docker image.
+
+If you start it with =sudo=, the script in the container runs under your
+pre-sudo uid:gid (as per =$SUDO_UID= and =$SUDO_GID= env vars). Otherwise, it
+runs under your effective uid:gid.
+
+Without any args (or with =--help= option), the wrapper prints some usage
+text. =--script-help= option can be used to pass =--help= to the
+script. Otherwise, such form is expected (notice the options *must* be delimited
+with =--= from the rest):
+
+#+begin_example
+  ubuntu-remaster-bbb.docker [options] -- input output
+#+end_example
+
+* Tech details
+
+Ubuntu [[https://manpages.ubuntu.com/manpages/jammy/man7/casper.7.html][casper]]-based iso images (at least since 10.04 for desktop and since 18.04
+for live server) can boot from the iso file as-is, provided its path with
+=iso-scan/filename= kernel arg. Minimal sample grub config assuming the iso is
+stored in =/boot/iso= on the same filesystem where =/boot/grub= is located:
+
+#+begin_example
+  menuentry "ubuntu-22.04.4 desktop" /boot/iso/ubuntu-22.04.4-desktop-amd64.iso {
+      loopback loop "$2"
+      linux (loop)/casper/vmlinuz boot=casper iso-scan/filename="$2"
+      initrd (loop)/casper/initrd
+  }
+#+end_example
+
+It just works as long as the filesystem is recognized by casper.

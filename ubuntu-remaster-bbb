@@ -1,0 +1,761 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2128,SC2178,SC2179
+
+# MIT license (c) 2024 https://github.com/slowpeek
+# Homepage: https://github.com/slowpeek/ubuntu-remaster-bbb
+
+set -eu -o pipefail
+
+SCRIPT_SELF=${BASH_SOURCE[0]##*/}
+
+if [[ -t 2 ]]; then
+    t_red=$'\e[31m'
+    t_yellow=$'\e[33m'
+    t_reset=$'\e(B\e[m'
+else
+    t_red=
+    t_yellow=
+    t_reset=
+fi
+
+_log_indent=
+log_indent() { _log_indent+='| '; }
+log_unindent() { _log_indent=${_log_indent%| }; }
+
+log() { printf '%s%s\n' "$_log_indent" "$1" >&2; }
+log_warn() { log "${t_yellow}warning:${t_reset} $1"; }
+log_err() { log "${t_red}error:${t_reset} $1"; }
+
+bye() {
+    log_err "$1"
+    exit 1
+}
+
+in_path() {
+    type -P -- "$1" >/dev/null
+}
+
+in_path_req() {
+    in_path "$1" ||
+        bye "$1 tool is not installed${2:+ ($2)}"
+}
+
+capture_stdin() {
+    _stdin=$(cat)
+}
+
+# To be used in pipes. Run "$@", convert exit code 141 to 0
+sigpipe_ok() {
+    local _st=0
+    "$@" || _st=$?
+    [[ ! $_st == 141 ]] || _st=0
+    return "$_st"
+}
+
+test_req() {
+    local path=$1
+    shift
+
+    while (( $# )); do
+        test -"$1" "$path" ||
+            case "$1" in
+                e) bye "'$path' does not exist" ;;
+                f) bye "'$path' is not a regular file" ;;
+                d) bye "'$path' is not a directory" ;;
+                r) bye "'$path' is not readable" ;;
+                w) bye "'$path' is not writable" ;;
+            esac
+
+        shift
+    done
+}
+
+temp_paths=()
+
+temp_file() {
+    local -n path=$1
+    path=$tmp_dir/remaster.$$.${2:+$2-}$1
+    temp_paths+=("$path")
+}
+
+temp_dir() {
+    temp_file "$@"
+    mkdir "${!1}"
+}
+
+cleanup() {
+    local path list=()
+    for path in "${temp_paths[@]}"; do
+        # Sanity check for the files to remove
+        [[ ! $path == "$tmp_dir"/*.$$.* ]] || list+=("$path")
+    done
+
+    [[ ! -v list ]] || rm -rf "${list[@]}"
+}
+
+cpio_extract_to() {
+    cd "$1"
+    cpio -i --preserve-modification-time --no-absolute-filenames --quiet
+}
+
+cpio_from_dir() {
+    find "$1" -mindepth 1 -printf '%P\n' | LC_ALL=C sort |
+        cpio -D "$1" --quiet -H newc -R 0:0 -o
+}
+
+xorriso_exists() {
+    local result
+    result=$(xorriso -indev "$iso" -find "$@" 2>/dev/null) || return 1
+    [[ -n $result ]]
+}
+
+xorriso_find() {
+    xorriso -indev "$iso" -find "$@" 2>/dev/null
+}
+
+xorriso_extract() {
+    osirrox -indev "$iso" -extract "$@" 2>/dev/null
+}
+
+xorriso_extract_l() {
+    osirrox -indev "$iso" -extract_l "$@" -- 2>/dev/null
+}
+
+# Revert xorriso/misc_funct.c:Text_shellsafe(), assuming the pathes do not
+# contain quotes
+xorriso_unescape() {
+    local -n ref=$1
+
+    if [[ ${ref@a} == *a* ]]; then
+        ref=("${ref[@]#\'}")
+        ref=("${ref[@]%\'}")
+    else
+        ref=${ref#\'}
+        ref=${ref%\'}
+    fi
+}
+
+unsquashfs_l() {
+    unsquashfs -l -o "$squash_offset" -d '' "$iso" "$1"
+}
+
+pv_fallback() {
+    if in_path pv; then
+        pv -ep "$@"
+    else
+        log_warn 'pv is not installed, no progress'
+        cat "$@"
+    fi
+}
+
+task_fs_check() {
+    [[ $1 == +([a-z0-9]) ]] ||
+        bye "--fs value '$1' is not lowcase alphanumeric"
+}
+
+task_module_check() {
+    [[ $1 == ?(~)[a-zA-Z0-9]+([a-zA-Z0-9_-]) ]] ||
+        bye "--module value '$1' is not alphanumeric"
+}
+
+# Split a comma separated list $2 into values. For each value X, run "$1"_check
+# function. After that, append 'X,' to the var named $1, if only it is not there
+# already
+parse_vals_list() {
+    local -n ref=$1
+
+    local list el
+    read -r -a list <<< "${2//,/ }"
+
+    for el in "${list[@]}"; do
+        "$1"_check "$el"
+        [[ ! $ref == *,"$el",* ]] || continue
+        ref+=$el,
+    done
+}
+
+usage() {
+    cat <<'EOF'
+Usage: ubuntu-remaster-bbb [options] input output
+
+Homepage https://github.com/slowpeek/ubuntu-remaster-bbb
+EOF
+
+    exit
+}
+
+[[ ! $SCRIPT_SELF == *-f2fs* ]] ||
+    set -- --fs f2fs --module f2fs,~crc32_generic,crc32-pclmul "$@"
+
+[[ ! $SCRIPT_SELF == *-exfat* ]] ||
+    set -- --fs exfat --module exfat "$@"
+
+# jetopt .fs: .module: .no-nvidia .no-tpm .hwe-only .distro: hhelp .dry-run .script-help .no-cleanup .tmp-dir:
+opts=$(getopt -o h -l fs:,module:,no-nvidia,no-tpm,hwe-only,distro:,help,dry-run,script-help,no-cleanup,tmp-dir: -- "$@") || exit
+eval set -- "$opts"
+
+task_fs=,
+task_module=,
+no_nvidia=n
+no_tpm=n
+hwe_only=n
+cleanup=y
+dry_run=n
+tmp_dir=
+distro=
+action=n
+
+while (( $# )); do
+    case $1 in
+        -h|--help|--script-help)
+            usage ;;
+
+        --fs)
+            action=y
+            parse_vals_list task_fs "$2"
+            shift 2 ;;
+
+        --module)
+            action=y
+            parse_vals_list task_module "$2"
+            shift 2 ;;
+
+        --no-nvidia)
+            action=y
+            no_nvidia=y
+            shift ;;
+
+        --no-tpm)
+            action=y
+            no_tpm=y
+            shift ;;
+
+        --hwe-only)
+            hwe_only=y
+            shift ;;
+
+        --distro)
+            distro=$2
+            shift 2 ;;
+
+        --dry-run)
+            dry_run=y
+            shift ;;
+
+        --no-cleanup)
+            cleanup=n
+            shift ;;
+
+        --tmp-dir)
+            tmp_dir=$2
+            shift 2 ;;
+
+        --)
+            shift
+            break ;;
+    esac
+done
+
+(( $# )) || usage
+(( $# < 3 )) || bye "Only two args are expected: input and output file"
+(( $# > 1 )) || bye "You should provide the output file as well"
+
+[[ $action == y ]] ||
+    bye 'Nothing to do, no action options set'
+
+read -r -a task_fs <<< "${task_fs//,/ }"
+read -r -a task_module <<< "${task_module//,/ }"
+
+readonly iso=$1
+readonly iso_out=$2
+
+[[ $iso == *.iso && $iso_out == *.iso ]] ||
+    bye 'The input and output files are supposed to have *.iso extension'
+
+test_req "$iso" e f r
+
+! test -e "$iso_out" || bye "'$_' already exists"
+test_req "$(dirname "$iso_out")" e d w
+
+[[ -n $tmp_dir ]] || tmp_dir=${TMPDIR:-/tmp}
+test_req "$tmp_dir" e d w
+
+readonly tmp_dir
+[[ $cleanup == n ]] || trap cleanup EXIT
+
+in_path_req xorriso
+
+if [[ -z $distro ]]; then
+    xorriso_exists /.disk/info ||
+        bye "There is no /.disk/info in the iso"
+
+    temp_file disk_info
+    # shellcheck disable=SC2154
+    xorriso_extract /.disk/info "$disk_info"
+
+    # There is no eol in .disk/info and read returns 1
+    read -r -a disk_info < "$disk_info" || true
+
+    # The version number is not guaranteed to be the second token. For example,
+    # in ubuntu-23.10-desktop-legacy-amd64.iso it is 'Ubuntu Legacy 23.10
+    # "Mantic Minotaur" - Release amd64 (20231010)'
+    for token in "${disk_info[@]}"; do
+        # Stop on the first number-like token
+        if [[ $token == [1-9]* ]]; then
+            distro=$token
+            break
+        fi
+    done
+
+    [[ -n $distro ]] ||
+        bye 'Failed to figure out the version number in /.disk/info'
+fi
+
+[[ $distro == @([4-9].*|[1-9][0-9].*) ]] ||
+    bye "'${distro}' does not look like some ubuntu release number"
+
+(( ${distro%%.*} > 13 )) ||
+    bye "This script only supports ubuntu 14.04+"
+
+xorriso_exists /casper -maxdepth 0 ||
+    bye "This script only supports casper-based iso. It is 18.04+ for server iso"
+
+temp_file md5sum_new
+# shellcheck disable=SC2154
+xorriso_extract /md5sum.txt "$md5sum_new"
+chmod u+w "$_"
+
+if [[ -v task_module ]]; then
+    if (( ${distro%%.*} < 18 )); then
+        # Till 18.04 there is one squash only
+        modules_squashes=('/casper/filesystem.squashfs')
+
+        set_squash_prefixes() {
+            squash_prefix_in=lib/modules/$kernel/kernel
+            squash_prefix_out=
+        }
+    else
+        # Possible cases:
+        # 1. Single filesystem.squashfs, as previously
+        # 2. Modules-only squashes (generic + hwe) under /casper/extras. In this
+        # case filesystem.manifest does not mention linux-modules
+        # 3. No filesystem.squashfs at all, instead there is a set of squashes
+        # to be layered on top of each other. filesystem.manifest and the
+        # modules-holding squashes' manifests (generic + hwe) mention
+        # linux-modules
+
+        temp_dir manifests
+        # shellcheck disable=SC2154
+        xorriso_extract_l /casper "$manifests" '/casper/*.manifest'
+
+        # filesystem.manifest is the biggest one since it lists everything. Sort
+        # by size to push it to the bottom
+        # shellcheck disable=SC2011
+        squashes=$(ls -Sr -- "$manifests"/* | xargs grep -lF 'linux-modules' |
+                       sed -E 's,^.+/,/casper/,;s,manifest$,squashfs,') || true
+
+        if [[ -n $squashes ]]; then
+            readarray -t modules_squashes <<< "$squashes"
+
+            if (( ${#modules_squashes[@]} > 1 )); then
+                # filesystem.squashfs is irrelevant
+                unset -v 'modules_squashes[-1]'
+            fi
+
+            set_squash_prefixes() {
+                squash_prefix_in=$lib_root/modules/$kernel/kernel
+                squash_prefix_out=
+            }
+        else
+            squashes=$(xorriso_find /casper/extras -name 'modules.squashfs*') ||
+                bye 'Failed to figure out the kernel modules squashes'
+
+            readarray -t modules_squashes <<< "$squashes"
+            xorriso_unescape modules_squashes
+
+            set_squash_prefixes() {
+                squash_prefix_in=$kernel/kernel
+                squash_prefix_out=lib/modules
+            }
+        fi
+    fi
+
+    if (( ${#modules_squashes[@]} > 1 )); then
+        if [[ ${modules_squashes[0]} == *hwe* ]]; then
+            # Ensure generic comes before hwe
+            modules_squashes=("${modules_squashes[1]}" "${modules_squashes[0]}")
+        fi
+    fi
+fi
+
+xorriso_args=()
+
+if [[ -v task_fs || -v task_module ]]; then
+    find_query=(-name 'hwe-initrd*')
+    [[ $hwe_only == y ]] || find_query+=(-or -name 'initrd*')
+
+    initrd_count=0
+    for initrd in $(xorriso_find /casper "${find_query[@]}"); do
+        (( ++initrd_count ))
+        xorriso_unescape initrd
+
+        log "patch ${initrd#/}"
+        log_indent
+
+        prefix=
+        [[ ! $initrd == *hwe* ]] || prefix=hwe
+
+        temp_file initrd_old "$prefix"
+        # shellcheck disable=SC2154
+        xorriso_extract "$initrd" "$initrd_old"
+
+        in_path_req unmkinitramfs-turbo 'https://github.com/slowpeek/unmkinitramfs-turbo/blob/master/unmkinitramfs-turbo'
+
+        scan=$(unmkinitramfs-turbo -ss "$initrd_old" | tail -n2 | tac)
+        readarray -t scan <<< "$scan"
+
+        read -r comp_cmd offset_main <<< "${scan[0]}"
+
+        [[ ! $comp_cmd == -- ]] ||
+            bye 'Failed to detect the compression method'
+
+        log "main archive offset=${offset_main}, compression=${comp_cmd}"
+
+        temp_dir initrd_main "$prefix"
+        # shellcheck disable=SC2154
+        log "extract the main archive into ${initrd_main}"
+
+        case $comp_cmd in
+            lzma|xz) comment='package: xz-utils' ;;
+            *) comment= ;;
+        esac
+
+        in_path_req "$comp_cmd" "$comment"
+        in_path_req cpio
+
+        # sigpipe_ok: for the case of cpio not exhausting the whole input
+        sigpipe_ok dd status=none if="$initrd_old" skip="$offset_main" iflag=skip_bytes |
+            sigpipe_ok "$comp_cmd" -q -dc |
+            cpio_extract_to "$initrd_main"
+
+        lib_root=usr/lib
+        [[ -L $initrd_main/lib ]] || lib_root=lib
+
+        repack_main=n
+
+        if [[ -v task_fs ]]; then
+            log 'patch casper scripts for fs support'
+            log_indent
+
+            script_ok=n
+            # Patch lupin-helpers up to 21.10, casper-helpers since 22.04. The
+            # latter is always there, the former is gone since 22.04
+            for script in scripts/{casper,lupin}-helpers; do
+                script_name=${script##*/}
+                script_path=$initrd_main/$script
+                [[ -e $script_path ]] || continue
+
+                if grep -qw jfs "$script_path"; then
+                    script_ok=y
+                    break
+                fi
+            done
+
+            [[ $script_ok == y ]] ||
+                bye 'casper-helpers/lupin-helpers seems exotic'
+
+            match_fs_list=$(grep -m1 -nF '|jfs|' "$script_path") ||
+                bye "Failed to find the patch anchor for ${script_name}:is_supported_fs()"
+
+            read -r _ fs_list <<< "$match_fs_list"
+            fs_list="|${fs_list%)}|"
+
+            match_modprobe=$(grep -m1 -nF 'modprobe jfs' "$script_path") ||
+                bye "Failed to find the patch anchor for ${script_name}:wait_for_devs()"
+
+            loop_indent=n
+            for fs in "${task_fs[@]}"; do
+                [[ $loop_indent == n ]] || log_unindent
+
+                log "$fs"
+                log_indent
+                loop_indent=y
+
+                if [[ $fs_list == *"|$fs|"* ]]; then
+                    log_warn "seems already supported"
+                    continue
+                fi
+
+                repack_main=y
+
+                log "${script_name}:is_supported_fs()"
+                sed -Ei "${match_fs_list%%:*}s,\\|jfs\\|,|jfs|${fs}|," "$script_path"
+
+                log "${script_name}:wait_for_devs()"
+                sed -Ei "${match_modprobe%%:*}{p;s,jfs,${fs},}" "$script_path"
+
+                # libblkid in ubuntu 14.04 does not recognize f2fs
+                if [[ $fs == f2fs && $distro == 14.04* ]]; then
+                    _script=scripts/casper-helpers
+                    _script_name=${_script##*/}
+                    _script_path=$initrd_main/$_script
+
+                    # shellcheck disable=SC2016
+                    match_blkid=$(grep -m1 -nF '/sbin/blkid -s TYPE -o value' "$_script_path") ||
+                        bye "Failed to find the patch anchor for ${_script_name}:get_fstype()"
+
+                    log "${_script_name}:get_fstype()"
+
+                    capture_stdin <<'PATCH'
+    /sbin/blkid -s TYPE -o value $1 2>/dev/null || {\
+        # Check for f2fs\
+        case "$(dd if="$1" skip=2 count=1 2>/dev/null)" in\
+            "$(printf '\\x10\\x20\\xf5\\xf2')"*)\
+                echo f2fs\
+                return 0 ;;\
+        esac\
+        return 1\
+    }
+PATCH
+
+                    sed -Ei "${match_blkid%%:*}c\\${_stdin}" "$_script_path"
+                fi
+            done
+
+            [[ $loop_indent == n ]] || log_unindent
+            log_unindent
+        fi
+
+        repack_early3=n
+
+        if [[ -v task_module ]]; then
+            for kernel in "$initrd_main"/lib/modules/*; do
+                kernel=${kernel##*/}
+                break
+            done
+
+            log "kernel ${kernel}"
+
+            if test -e "$initrd_main/lib/modules/$kernel/kernel"; then
+                modules_dir=$_
+                initrd_modules=$initrd_main
+            else
+                [[ -v scan[1] ]] ||
+                    bye 'Wrong initrd format (no early3 cpio)'
+
+                read -r _ offset_early3 size_early3 <<< "${scan[1]}"
+                log "modules archive offset=${offset_early3}, size=${size_early3}"
+
+                temp_dir initrd_early3 "$prefix"
+                # shellcheck disable=SC2154
+                log "extract the modules archive into ${initrd_early3}"
+
+                # sigpipe_ok: for the case of cpio not exhausting the whole input
+                sigpipe_ok dd status=none if="$initrd_old" skip="$offset_early3" count="$size_early3" \
+                           iflag=skip_bytes,count_bytes |
+                    cpio_extract_to "$initrd_early3"
+
+                test -e "$initrd_early3/usr/lib/modules/$kernel/kernel" ||
+                    bye 'Wrong initrd format (no modules in early3 cpio)'
+
+                modules_dir=$_
+                initrd_modules=$initrd_early3
+                repack_early3=y
+            fi
+
+            # Detect modules extension. Could be .ko or .ko.zst
+            sample=$(find "$modules_dir"/fs -type f -print -quit)
+            module_ext=${sample#"${sample%.ko*}"}
+
+            set_squash_prefixes
+
+            squash=${modules_squashes[0]}
+            [[ ! $initrd == *hwe* ]] || squash=${modules_squashes[1]}
+
+            lba=$(xorriso_find "$squash" -exec report_lba | tail -n1)
+            read -r _ _ _ _ _ squash_offset _ <<< "$lba"
+            (( squash_offset*=2048 ))
+
+            log 'checkout kernel modules'
+            log_indent
+
+            squash_prepared=n
+            modules_added=n
+
+            for module in "${task_module[@]/%/$module_ext}"; do
+                required=y
+                if [[ $module == '~'* ]]; then
+                    required=n
+                    module=${module:1}
+                fi
+
+                if [[ -n $(find "$modules_dir" -name "$module" -print -quit) ]]; then
+                    log "skip ${module}"
+                    continue
+                fi
+
+                if [[ $squash_prepared == n ]]; then
+                    squash_prepared=y
+
+                    in_path_req unsquashfs 'package: squashfs-tools'
+
+                    temp_file squash_index "$prefix"
+                    # shellcheck disable=SC2154
+                    unsquashfs_l "$squash_prefix_in" |
+                        sed -En "/${module_ext//./\\.}\$/s,^/${squash_prefix_in}/,,p" > "$squash_index"
+                fi
+
+                if ! module_path=$(grep -E "${module//./\\.}$" "$squash_index"); then
+                    [[ $required == n ]] ||
+                        bye "The squashed fs does not provide ${module}"
+
+                    log "skip ${module}"
+                    continue
+                fi
+
+                log "add ${module}"
+
+                [[ ! $module_path == */staging/* ]] ||
+                    log_warn "${module} is not mature"
+
+                unsquashfs -n -q -f -no-xattrs -d "$initrd_modules/$squash_prefix_out" \
+                           -o "$squash_offset" "$iso" "$squash_prefix_in/$module_path"
+
+                modules_added=y
+            done
+
+            log_unindent
+
+            if [[ $modules_added == y ]]; then
+                [[ $repack_early3 == n ]] ||
+                    # Make it look like the modules are in $initrd_main
+                    ln -s "$initrd_early3/usr/lib/modules/$kernel/kernel" \
+                       "$initrd_main/lib/modules/$kernel"
+
+                in_path_req depmod 'package: kmod'
+                depmod -b "$initrd_main" "$kernel"
+
+                # There could be some empty files, like modules.builtin.alias.bin
+                find "$initrd_main/lib/modules/$kernel" -maxdepth 1 -name 'modules.*' -empty -delete
+
+                [[ $repack_early3 == n ]] ||
+                    # The symlink is no longer needed
+                    rm "$initrd_main/lib/modules/$kernel/kernel"
+
+                repack_main=y
+            fi
+        fi
+
+        if [[ $repack_main == y ]]; then
+            copy_size=$offset_main
+            [[ $repack_early3 == n ]] || copy_size=$offset_early3
+
+            # Copy old initrd head as-is
+            temp_file initrd_new "$prefix"
+            # shellcheck disable=SC2154
+            dd status=none if="$initrd_old" count="$copy_size" iflag=count_bytes > "$initrd_new"
+
+            [[ $repack_early3 == n ]] ||
+                cpio_from_dir "$initrd_early3" >> "$initrd_new"
+
+            # Create the updated main cpio
+            temp_file cpio_new "$prefix"
+            # shellcheck disable=SC2154
+            cpio_from_dir "$initrd_main" > "$cpio_new"
+
+            log "compress new initrd with ${comp_cmd}"
+
+            comp_flags=()
+            # The kernel assumes the "legacy" lz4 format
+            [[ ! $comp_cmd == lz4 ]] || comp_flags+=(-l)
+
+            # Compress the updated main cpio
+            pv_fallback "$cpio_new" | "$comp_cmd" "${comp_flags[@]}" -c >> "$initrd_new"
+
+            xorriso_args+=(-update "$initrd_new" "$initrd")
+
+            initrd_new_md5=$(md5sum "$initrd_new" | cut -d ' ' -f1)
+            sed -Ei "/  \\.${initrd//\//\\/}\$/s,^[^ ]+,${initrd_new_md5}," "$md5sum_new"
+        fi
+
+        log_unindent
+    done
+
+    (( initrd_count )) || bye 'Failed to find any initrd in the iso'
+fi
+
+if [[ $no_nvidia == y ]]; then
+    log 'nvidia'
+    log_indent
+
+    if [[ -z $(xorriso_find /pool/restricted/n -name 'nvidia*' | head -n1) ]]; then
+        log 'the iso does not contain nvidia drivers'
+    else
+        log 'the iso will be free of nvidia drivers'
+
+        xorriso_args+=(
+            '-rm_r /pool/restricted/{l,n} --'
+        )
+
+        sed -Ei '/  \.\/pool\/restricted\/[ln]\//d' "$md5sum_new"
+    fi
+
+    log_unindent
+fi
+
+if [[ $no_tpm == y ]]; then
+    log 'tpm'
+    log_indent
+
+    if [[ -z $(xorriso_find /casper -name '*.enhanced-secureboot.*' | head -n1) ]]; then
+        log 'the iso does not contain enhanced-secureboot layers'
+    else
+        log 'the iso will be free of enhanced-secureboot layers'
+
+        xorriso_args+=(
+            '-rm_r /casper/*.enhanced-secureboot.* --'
+        )
+
+        sed -Ei '/  \.\/casper\/.*\.enhanced-secureboot\./d' "$md5sum_new"
+    fi
+
+    log_unindent
+fi
+
+echo
+
+if [[ ! -v xorriso_args ]]; then
+    log_warn 'the iso is good as-is'
+    exit
+fi
+
+xorriso_args=(
+    -indev "$iso" -outdev "$iso_out"
+    -boot_image any replay
+    -update "$md5sum_new" /md5sum.txt
+    "${xorriso_args[@]}"
+)
+
+if [[ $dry_run == y ]]; then
+    xorriso() {
+        echo 'xorriso_args=('
+
+        local list=("$1")
+        shift
+
+        while (( $# )); do
+            if [[ $1 == -[^-]* ]]; then
+                printf '    %s\n' "${list[*]}"
+                list=()
+            fi
+
+            list+=("$1")
+            shift
+        done
+
+        printf '    %s\n' "${list[*]}"
+        echo ')'
+    }
+fi
+
+xorriso "${xorriso_args[@]}"

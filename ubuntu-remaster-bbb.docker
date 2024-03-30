@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+if [[ -t 2 ]]; then
+    t_red=$'\e[31m'
+    t_reset=$'\e(B\e[m'
+else
+    t_red=
+    t_reset=
+fi
+
+bye() {
+    echo "[wrapper] ${t_red}error:${t_reset} $1"
+    exit 1
+}
+
+usage() {
+    cat <<EOF
+Pass --help option to the script:
+  ubuntu-remaster-bbb.docker --script-help
+
+Run the script:
+  ubuntu-remaster-bbb.docker options -- input output
+
+Error messages produced by this wrapper are prefixed with '[wrapper]'
+
+EOF
+
+    exit
+}
+
+docker_opts=(
+    -t --rm --init
+    -u "${SUDO_UID:-$(id -u)}:${SUDO_GID:-$(id -g)}"
+)
+
+docker_mounts=()
+script_opts=()
+
+run_it() {
+    exec docker run "${docker_opts[@]}" "${docker_mounts[@]}" \
+         ubuntu-remaster-bbb "${script_opts[@]}"
+}
+
+(( $# )) || usage
+
+split=n
+while (( $# )); do
+    case $1 in
+        --)
+            split=y
+            shift
+            break ;;
+
+        -h|--help)
+            usage ;;
+
+        --script-help)
+            script_opts=(--help)
+            run_it ;;
+
+        *)
+            script_opts+=("$1")
+            shift ;;
+    esac
+done
+
+[[ $split == y ]] || bye '"--" not found among args'
+(( $# > 1 )) || bye 'You should provide input and output files'
+
+readonly iso=$1
+readonly iso_out=$2
+
+test -e "$iso" || bye "'$_' does not exist"
+
+out_dir=$(dirname "$iso_out")
+test -e "$out_dir" || bye "'$_' does no exist"
+test -d "$out_dir" || bye "'$_' is not a directory"
+
+docker_mounts=( -v "$iso":/input.iso:ro -v "$out_dir":/output )
+script_opts+=( /input.iso /output/"$(basename "$iso_out")" )
+
+run_it
