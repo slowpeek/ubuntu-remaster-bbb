@@ -710,7 +710,7 @@ if [[ $no_nvidia == y ]]; then
         log 'the iso will be free of nvidia drivers'
 
         xorriso_args+=(
-            '-rm_r /pool/restricted/{l,n} --'
+            -rm_r /pool/restricted/{l,n} --
         )
 
         sed -Ei '/  \.\/pool\/restricted\/[ln]\//d' "$md5sum_new"
@@ -729,7 +729,7 @@ if [[ $no_tpm == y ]]; then
         log 'the iso will be free of enhanced-secureboot layers'
 
         xorriso_args+=(
-            '-rm_r /casper/*.enhanced-secureboot.* --'
+            -rm_r /casper/'*.enhanced-secureboot.*' --
         )
 
         sed -Ei '/  \.\/casper\/.*\.enhanced-secureboot\./d' "$md5sum_new"
