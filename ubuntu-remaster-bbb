@@ -5,6 +5,7 @@
 # Homepage: https://github.com/slowpeek/ubuntu-remaster-bbb
 
 set -eu -o pipefail
+shopt -s extglob
 
 SCRIPT_SELF=${BASH_SOURCE[0]##*/}
 
@@ -38,6 +39,20 @@ in_path() {
 in_path_req() {
     in_path "$1" ||
         bye "$1 tool is not installed${2:+ ($2)}"
+}
+
+# Transform vars from $@: collapse consecutive slashes and remove trailing slash
+# if possible
+normalize_path() {
+    while (( $# )); do
+        local -n ref=$1
+        shift
+
+        ref=${ref//\/+(\/)//}
+        [[ $ref == / ]] || ref=${ref%/}
+
+        unset -n ref
+    done
 }
 
 capture_stdin() {
@@ -159,8 +174,7 @@ task_module_check() {
 }
 
 # Split a comma separated list $2 into values. For each value X, run "$1"_check
-# function. After that, append 'X,' to the var named $1, if only it is not there
-# already
+# function. After that, append 'X,' to var $1, if only it is not there already
 parse_vals_list() {
     local -n ref=$1
 
@@ -266,8 +280,9 @@ done
 read -r -a task_fs <<< "${task_fs//,/ }"
 read -r -a task_module <<< "${task_module//,/ }"
 
-readonly iso=$1
-readonly iso_out=$2
+iso=$1 iso_out=$2
+normalize_path iso iso_out
+readonly iso iso_out
 
 [[ $iso == *.iso && $iso_out == *.iso ]] ||
     bye 'The input and output files are supposed to have *.iso extension'
@@ -278,6 +293,7 @@ test_req "$iso" e f r
 test_req "$(dirname "$iso_out")" e d w
 
 [[ -n $tmp_dir ]] || tmp_dir=${TMPDIR:-/tmp}
+normalize_path tmp_dir
 test_req "$tmp_dir" e d w
 
 readonly tmp_dir
