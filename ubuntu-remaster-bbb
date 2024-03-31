@@ -198,25 +198,85 @@ EOF
     exit
 }
 
+# Homepage: https://github.com/slowpeek/jetopt
+jetopt_embed() {
+    local arg type mode='' short='' long=''
+
+    while (( $# )); do
+        arg=$1
+
+        case $arg in
+            -*)
+                break ;;
+
+            ,*)
+                [[ $arg == ,[+-] ]] && mode=${arg:1} ;;
+
+            *)
+                type=${arg##*[!:]}
+                arg=${arg%"$type"}
+
+                [[ $arg == .* ]] || short+=${arg::1}$type
+                arg=${arg:1}
+
+                [[ -z $arg ]] || long+=,$arg$type
+        esac
+
+        shift
+    done
+
+    local args=()
+
+    if [[ -n $short || -n $long ]]; then
+        short=$mode$short
+
+        if [[ -z $short ]]; then
+            args+=(-o "''")
+        else
+            args+=(-o "$short")
+        fi
+
+        [[ -z $long ]] || args+=(-l "${long:1}")
+    fi
+
+    getopt "${args[@]}" "$@"
+}
+
 [[ ! $SCRIPT_SELF == *-f2fs* ]] ||
     set -- --fs f2fs --module f2fs,~crc32_generic,crc32-pclmul "$@"
 
 [[ ! $SCRIPT_SELF == *-exfat* ]] ||
     set -- --fs exfat --module exfat "$@"
 
-# jetopt .fs: .module: .no-nvidia .no-tpm .hwe-only .distro: hhelp .dry-run .script-help .no-cleanup .tmp-dir:
-opts=$(getopt -o h -l fs:,module:,no-nvidia,no-tpm,hwe-only,distro:,help,dry-run,script-help,no-cleanup,tmp-dir: -- "$@") || exit
+jet_opts=(
+    .script-help
+    hhelp
+
+    .fs:                        # task_fs
+    .module:                    # task_module
+    .no-nvidia                  # no_nvidia
+    .no-tpm                     # no_tpm
+
+    .distro:                    # distro
+    .tmp-dir:                   # tmp_dir
+
+    .dry-run                    # dry_run
+    .hwe-only                   # hwe_only
+    .no-cleanup                 # cleanup
+)
+
+opts=$(jetopt_embed "${jet_opts[@]}" -- "$@") || exit
 eval set -- "$opts"
 
 task_fs=,
 task_module=,
 no_nvidia=n
 no_tpm=n
+distro=
+tmp_dir=
+dry_run=n
 hwe_only=n
 cleanup=y
-dry_run=n
-tmp_dir=
-distro=
 action=n
 
 while (( $# )); do
@@ -244,25 +304,25 @@ while (( $# )); do
             no_tpm=y
             shift ;;
 
-        --hwe-only)
-            hwe_only=y
-            shift ;;
-
         --distro)
             distro=$2
+            shift 2 ;;
+
+        --tmp-dir)
+            tmp_dir=$2
             shift 2 ;;
 
         --dry-run)
             dry_run=y
             shift ;;
 
+        --hwe-only)
+            hwe_only=y
+            shift ;;
+
         --no-cleanup)
             cleanup=n
             shift ;;
-
-        --tmp-dir)
-            tmp_dir=$2
-            shift 2 ;;
 
         --)
             shift
