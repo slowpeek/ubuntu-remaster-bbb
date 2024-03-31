@@ -1,6 +1,21 @@
 * About
 
+This script can do multiple things to ubuntu iso images:
+- make =casper= accept extra filesystems to [[https://help.ubuntu.com/community/Grub2/ISOBoot][loopback-boot]] from, e.g. =f2fs= or
+  =exfat=
+- add kernel modules from the squashed filesystem to the initrd, for example, to
+  support the above mentioned filesystems
+- remove nvidia drivers
+- remove tpm stuff (the =enhanced-secureboot= layers introduced in 23.10)
 
+Supported iso releases are =14.04= to =24.04= for desktop, =18.04= to =24.04=
+for live-server.
+
+It works with ubuntu flavours as well. As for other ubuntu-based images, it
+should generally work, but you might need to give it a hint on the release
+version with the =--distro= option. The version is guessed from =/.disk/info=
+file in the image. For example, 22.04-based [[https://en.wikipedia.org/wiki/KDE_neon][KDE neon]] does not mention the
+numeric version there. In the case, you could fix it with =--distro 22.04=.
 
 * Dependencies
 
