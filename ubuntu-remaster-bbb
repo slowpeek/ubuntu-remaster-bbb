@@ -485,7 +485,8 @@ if [[ -v task_fs || -v task_module ]]; then
         # shellcheck disable=SC2154
         xorriso_extract "$initrd" "$initrd_old"
 
-        in_path_req unmkinitramfs-turbo 'https://github.com/slowpeek/unmkinitramfs-turbo/blob/master/unmkinitramfs-turbo'
+        in_path_req unmkinitramfs-turbo \
+                    'https://github.com/slowpeek/unmkinitramfs-turbo/blob/master/unmkinitramfs-turbo'
 
         scan=$(unmkinitramfs-turbo -ss "$initrd_old" | tail -n2 | tac)
         readarray -t scan <<< "$scan"
@@ -611,8 +612,9 @@ PATCH
             done
 
             log "kernel ${kernel}"
+            initrd_main_kernel=$initrd_main/lib/modules/$kernel
 
-            if test -e "$initrd_main/lib/modules/$kernel/kernel"; then
+            if test -e "$initrd_main_kernel/kernel"; then
                 modules_dir=$_
                 initrd_modules=$initrd_main
             else
@@ -658,15 +660,22 @@ PATCH
             squash_prepared=n
             modules_added=n
 
-            for module in "${task_module[@]/%/$module_ext}"; do
+            for module in "${task_module[@]}"; do
                 required=y
                 if [[ $module == '~'* ]]; then
                     required=n
                     module=${module:1}
                 fi
 
-                if [[ -n $(find "$modules_dir" -name "$module" -print -quit) ]]; then
-                    log "skip ${module}"
+                module_file=$module$module_ext
+
+                if [[ -n $(find "$modules_dir" -name "$module_file" -print -quit) ]]; then
+                    log "skip ${module} (included)"
+                    continue
+                fi
+
+                if grep -qE "/${module}\\.ko\$" "$initrd_main_kernel/modules.builtin"; then
+                    log "skip ${module} (builtin)"
                     continue
                 fi
 
@@ -681,11 +690,11 @@ PATCH
                         sed -En "/${module_ext//./\\.}\$/s,^/${squash_prefix_in}/,,p" > "$squash_index"
                 fi
 
-                if ! module_path=$(grep -E "${module//./\\.}$" "$squash_index"); then
+                if ! module_path=$(grep -E "${module_file//./\\.}$" "$squash_index"); then
                     [[ $required == n ]] ||
                         bye "The squashed fs does not provide ${module}"
 
-                    log "skip ${module}"
+                    log "skip ${module} (unavailable, optional)"
                     continue
                 fi
 
@@ -705,18 +714,17 @@ PATCH
             if [[ $modules_added == y ]]; then
                 [[ $repack_early3 == n ]] ||
                     # Make it look like the modules are in $initrd_main
-                    ln -s "$initrd_early3/usr/lib/modules/$kernel/kernel" \
-                       "$initrd_main/lib/modules/$kernel"
+                    ln -s "$initrd_early3/usr/lib/modules/$kernel/kernel" "$initrd_main_kernel"
 
                 in_path_req depmod 'package: kmod'
                 depmod -b "$initrd_main" "$kernel"
 
                 # There could be some empty files, like modules.builtin.alias.bin
-                find "$initrd_main/lib/modules/$kernel" -maxdepth 1 -name 'modules.*' -empty -delete
+                find "$initrd_main_kernel" -maxdepth 1 -name 'modules.*' -empty -delete
 
                 [[ $repack_early3 == n ]] ||
                     # The symlink is no longer needed
-                    rm "$initrd_main/lib/modules/$kernel/kernel"
+                    rm "$initrd_main_kernel/kernel"
 
                 repack_main=y
             fi
