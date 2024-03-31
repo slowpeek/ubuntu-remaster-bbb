@@ -210,7 +210,7 @@ jetopt_embed() {
                 break ;;
 
             ,*)
-                [[ $arg == ,[+-] ]] && mode=${arg:1} ;;
+                [[ ! $arg == ,[+-] ]] || mode=${arg:1} ;;
 
             *)
                 type=${arg##*[!:]}
