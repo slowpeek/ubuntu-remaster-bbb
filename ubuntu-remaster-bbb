@@ -243,7 +243,7 @@ jetopt_embed() {
 }
 
 [[ ! $SCRIPT_SELF == *-f2fs* ]] ||
-    set -- --fs f2fs --module f2fs,~crc32_generic,crc32-pclmul "$@"
+    set -- --fs f2fs --module f2fs,~crc32_generic,~crc32-pclmul "$@"
 
 [[ ! $SCRIPT_SELF == *-exfat* ]] ||
     set -- --fs exfat --module exfat "$@"
