@@ -35,7 +35,74 @@ packages to have pre-installed is as such (you likely have some already):
 
 * Sample run
 
+*ubuntu-23.10.1-desktop-amd64.iso*: single initrd; only patch scripts
 
+#+begin_example
+  > ubuntu-remaster-f2fs --tmp-dir /run/shm ubuntu-23.10.1-desktop-amd64.iso /run/shm/mantic.iso
+  patch casper/initrd
+  | main archive offset=85893120, compression=zstd
+  | extract the main archive into /run/shm/remaster.223586.initrd_main
+  | patch casper scripts for fs support
+  | | f2fs
+  | | | casper-helpers:is_supported_fs()
+  | | | casper-helpers:wait_for_devs()
+  | kernel 6.5.0-9-generic
+  | modules archive offset=7278080, size=78615040
+  | extract the modules archive into /run/shm/remaster.223586.initrd_early3
+  | checkout kernel modules
+  | | skip f2fs (included)
+  | | skip crc32_generic (included)
+  | | skip crc32-pclmul (included)
+  | compress new initrd with zstd
+  [==============================================================================>] 100%
+
+  xorriso 1.5.4 : RockRidge filesystem manipulator, libburnia project.
+
+  [long xorriso log]
+
+  Writing to '/run/shm/mantic.iso' completed successfully.
+#+end_example
+
+*ubuntu-18.04.6-live-server-amd64.iso*: two initrd; patch scripts, add missing
+kernel modules
+
+#+begin_example
+  > ubuntu-remaster-f2fs --tmp-dir /run/shm ubuntu-18.04.6-live-server-amd64.iso /run/shm/bionic.iso
+  patch casper/hwe-initrd
+  | main archive offset=4641792, compression=gzip
+  | extract the main archive into /run/shm/remaster.224008.hwe-initrd_main
+  | patch casper scripts for fs support
+  | | f2fs
+  | | | lupin-helpers:is_supported_fs()
+  | | | lupin-helpers:wait_for_devs()
+  | kernel 5.4.0-84-generic
+  | checkout kernel modules
+  | | add f2fs
+  | | add crc32_generic
+  | | add crc32-pclmul
+  | compress new initrd with gzip
+  [==============================================================================>] 100%
+  patch casper/initrd
+  | main archive offset=4641792, compression=gzip
+  | extract the main archive into /run/shm/remaster.224008.initrd_main
+  | patch casper scripts for fs support
+  | | f2fs
+  | | | lupin-helpers:is_supported_fs()
+  | | | lupin-helpers:wait_for_devs()
+  | kernel 4.15.0-156-generic
+  | checkout kernel modules
+  | | add f2fs
+  | | add crc32_generic
+  | | add crc32-pclmul
+  | compress new initrd with gzip
+  [==============================================================================>] 100%
+
+  xorriso 1.5.4 : RockRidge filesystem manipulator, libburnia project.
+
+  [long xorriso log]
+
+  Writing to '/run/shm/bionic.iso' completed successfully.
+#+end_example
 
 * Sample grub setup for f2fs/exfat
 
