@@ -8,6 +8,9 @@ This script can do multiple things to ubuntu iso images:
 - remove nvidia drivers
 - remove tpm stuff (the =enhanced-secureboot= layers introduced in 23.10)
 
+When processing an image, it does not mount anything, not even with [[https://en.wikipedia.org/wiki/Filesystem_in_Userspace][FUSE]] or
+[[https://wiki.archlinux.org/title/Udisks][udisks]]. It is so by design to work under unprivileged docker.
+
 Supported iso releases are =14.04= to =24.04= for desktop, =18.04= to =24.04=
 for live-server.
 
