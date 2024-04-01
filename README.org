@@ -124,4 +124,22 @@ stored in =/boot/iso= on the same filesystem where =/boot/grub= is located:
   }
 #+end_example
 
-It just works as long as the filesystem is recognized by casper.
+It just works as long as the filesystem is recognized by casper. Speaking about
+f2fs, initrd in ubuntu iso images bundles the driver since 20.04, but casper
+itself does not include f2fs into its list of supported filesystems (as of Q1
+2024):
+
+#+begin_example
+  is_supported_fs(){
+      [ -z "${1}" ] && return 1
+      case ${1} in
+          ext2|ext3|ext4|xfs|jfs|reiserfs|vfat|ntfs|iso9660|btrfs|udf)
+              return 0
+              ;;
+      esac
+      return 1
+  }
+#+end_example
+
+and does not preload the f2fs kernel module. The exfat module is not even in
+initrd.
