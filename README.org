@@ -37,9 +37,45 @@ packages to have pre-installed is as such (you likely have some already):
 
 
 
-* Grub setup
+* Sample grub setup for f2fs/exfat
 
+Here we assume =/dev/sdX= is some flash drive with such GPT partitions (/type/
+and /desc/ in =gdisk= terms):
 
+| size | type | desc                 | fs            | mount point |
+|------+------+----------------------+---------------+-------------|
+| 1M   | EF02 | BIOS boot partition  |               |             |
+| 40M  | EF00 | EFI system partition | vfat          | /mnt/sdX2   |
+| rest | 8300 | Linux filesystem     | f2fs OR exfat | /mnt/sdX3   |
+
+*Notice*: the f2fs partition should be formatted with default settings. The
+[[https://wiki.archlinux.org/title/F2FS#Creating_a_F2FS_file_system][recommended]] way is to enable the checksums support, but grub's f2fs driver does
+not cope with such features.
+
+*i386-pc* target
+
+#+begin_example
+  sudo grub-install --target i386-pc --boot-directory /mnt/sdX3/boot /dev/sdX
+#+end_example
+
+*x86_64-efi* target
+
+Signed prebuilt grub images from =grub-efi-amd64-signed= package do [[https://git.launchpad.net/ubuntu/+source/grub2-unsigned/tree/debian/build-efi-images][not]] bundle
+f2fs and exfat modules (as of Q1 2024), so we have to make grub NOT use the
+images for sure. This way it would not work out-of-the-box when secure boot is
+enabled, but that is out of scope for this doc.
+
+#+begin_example
+  sudo grub-install --target x86_64-efi --boot-directory /mnt/sdX3/boot \
+       --efi-directory /mnt/sdX2 --removable --no-uefi-secure-boot /dev/sdX
+#+end_example
+
+Next, put =grub.cfg= from this repo into =/mnt/sdX3/boot/grub/=. The config
+assumes the iso images are under =/mnt/sdX3/boot/iso/= AND contain "*buntu*" in
+their names.
+
+You could get more elaborate grub configs from such projects as [[https://github.com/thias/glim][GLIM]] (ubuntu
+support there is not perfect though).
 
 * Docker image
 
