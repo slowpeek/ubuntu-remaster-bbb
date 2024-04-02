@@ -192,6 +192,52 @@ usage() {
     cat <<'EOF'
 Usage: ubuntu-remaster-bbb [options] input output
 
+Below "list" stands for a comma separated list of values.
+
+Options:
+  -h, --help                 Show usage
+
+  --fs list                  Make casper accept the filesystems from the list to
+                             loopback-boot from and preload corresponding kernel
+                             modules
+
+  --module list              Add modules from the list to the initrd. Prepend
+                             optional modules with "~"
+
+  --no-nvidia                Remove nvidia drivers
+  --no-tpm                   Remove tpm stuff (the enhanced-secureboot layers
+                             introduced in 23.10)
+
+  --distro xx.yy             Give a hint on ubuntu release number for the iso
+                             image. Usable for ubuntu-based images which dont
+                             set the version number in /.disk/info, like KDE
+                             neon
+
+  --tmp-dir path             Set a custom dir for temp files. By default,
+                             $TMPDIR value is used, if set and not empty, or
+                             /tmp otherwise
+
+  --dry-run                  Stop on the final step (reassembling the iso) and
+                             print xorriso options as a bash array. This can be
+                             used along with --no-cleanup to mix in custom
+                             modifications
+
+  --no-cleanup               Do not remove temp files on exit
+  --hwe-only                 Only modify the hwe initrd. By default, both initrd
+                             are processed if there are two. In some cases it is
+                             not possible, for example, when making 18.04
+                             live-server iso bootable from exfat, since only the
+                             hwe modules squash contains the exfat module
+
+When called by symlinks ubuntu-remaster-f2fs and ubuntu-remaster-exfat, such
+extra options are implied:
+
+  --fs f2fs --module f2fs,~crc32_generic,~crc32-pclmul
+  --fs exfat --module exfat
+
+Supported iso versions: 14.04 to 24.04 for desktop, 18.04 to 24.04 for live
+server.
+
 Homepage https://github.com/slowpeek/ubuntu-remaster-bbb
 EOF
 
