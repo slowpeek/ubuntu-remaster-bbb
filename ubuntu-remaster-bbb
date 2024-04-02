@@ -192,6 +192,9 @@ usage() {
     cat <<'EOF'
 Usage: ubuntu-remaster-bbb [options] input output
 
+Supported iso versions: 14.04 to 24.04 for desktop, 18.04 to 24.04 for
+live-server.
+
 Below "list" stands for a comma separated list of values.
 
 Options:
@@ -199,10 +202,11 @@ Options:
 
   --fs list                  Make casper accept the filesystems from the list to
                              loopback-boot from and preload corresponding kernel
-                             modules
+                             modules. You can use it multiple times
 
   --module list              Add modules from the list to the initrd. Prepend
-                             optional modules with "~"
+                             optional modules with tilde. You can use it
+                             multiple times
 
   --no-nvidia                Remove nvidia drivers
   --no-tpm                   Remove tpm stuff (the enhanced-secureboot layers
@@ -229,14 +233,15 @@ Options:
                              live-server iso bootable from exfat, since only the
                              hwe modules squash contains the exfat module
 
-When called by symlinks ubuntu-remaster-f2fs and ubuntu-remaster-exfat, such
-extra options are implied:
+Along with the script, there are two symlinks pointing to it:
+ubuntu-remaster-f2fs and ubuntu-remaster-exfat. When called by the symlinks,
+such options are implied by the script:
 
-  --fs f2fs --module f2fs,~crc32_generic,~crc32-pclmul
-  --fs exfat --module exfat
+  ubuntu-remaster-f2fs
+    => --fs f2fs --module f2fs,~crc32_generic,~crc32-pclmul
 
-Supported iso versions: 14.04 to 24.04 for desktop, 18.04 to 24.04 for live
-server.
+  ubuntu-remaster-exfat
+    => --fs exfat --module exfat
 
 Homepage https://github.com/slowpeek/ubuntu-remaster-bbb
 EOF
