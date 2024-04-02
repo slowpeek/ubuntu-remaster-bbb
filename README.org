@@ -11,9 +11,6 @@ This script can do multiple things to ubuntu iso images:
 When processing an image, it does not mount anything, not even with [[https://en.wikipedia.org/wiki/Filesystem_in_Userspace][FUSE]] or
 [[https://wiki.archlinux.org/title/Udisks][udisks]]. It is so by design to work under unprivileged docker.
 
-Supported iso releases are =14.04= to =24.04= for desktop, =18.04= to =24.04=
-for live-server.
-
 It works with ubuntu flavours as well. As for other ubuntu-based images, it
 should generally work, but you might need to give it a hint on the release
 version with the =--distro= option. The version is guessed from =/.disk/info=
@@ -32,6 +29,42 @@ packages to have pre-installed is as such (you likely have some already):
 #+begin_example
   ubuntu-remaster-bbb [options] input output
 #+end_example
+
+Supported iso versions: =14.04= to =24.04= for desktop, =18.04= to =24.04= for
+live-server.
+
+Below =list= stands for a comma separated list of values.
+
+Options:
+- =-h, --help= :: Show usage
+- =--fs list= :: Make casper accept the filesystems from the list to
+  loopback-boot from and preload corresponding kernel modules. /You can use it
+  multiple times/
+- =--module list= :: Add modules from the list to the initrd. Prepend optional
+  modules with tilde. /You can use it multiple times/
+- =--no-nvidia= :: Remove nvidia drivers
+- =--no-tpm= :: Remove tpm stuff (the =enhanced-secureboot= layers introduced in
+  23.10)
+- =--distro xx.yy= :: Give a hint on ubuntu release number for the iso
+  image. Usable for ubuntu-based images which dont set the version number in
+  =/.disk/info=, like KDE neon
+- =--tmp-dir path= :: Set a custom dir for temp files. By default, =$TMPDIR=
+  value is used, if set and not empty, or =/tmp= otherwise
+- =--dry-run= :: Stop on the final step (reassembling the iso) and print xorriso
+  options as a bash array. This can be used along with =--no-cleanup= to mix in
+  custom modifications
+- =--no-cleanup= :: Do not remove temp files on exit
+- =--hwe-only= :: Only modify the hwe initrd. By default, both initrd are
+  processed if there are two. In some cases it is not possible, for example,
+  when making 18.04 live-server iso bootable from exfat, since only the hwe
+  modules squash contains the exfat module
+
+Along with the script, there are two symlinks pointing to it:
+=ubuntu-remaster-f2fs= and =ubuntu-remaster-exfat=. When called by the symlinks,
+such options are implied by the script:
+
+- ubuntu-remaster-f2fs :: =--fs f2fs --module f2fs,~crc32_generic,~crc32-pclmul=
+- ubuntu-remaster-exfat :: =--fs exfat --module exfat=
 
 * Sample run
 
