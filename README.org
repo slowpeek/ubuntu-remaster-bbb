@@ -1,7 +1,7 @@
 * About
 
 This script can do multiple things to ubuntu iso images:
-- make =casper= accept extra filesystems to [[https://help.ubuntu.com/community/Grub2/ISOBoot][loopback-boot]] from, e.g. =f2fs= or
+- make [[https://manpages.ubuntu.com/manpages/jammy/man7/casper.7.html][casper]] accept extra filesystems to [[https://help.ubuntu.com/community/Grub2/ISOBoot][loopback-boot]] from, e.g. =f2fs= or
   =exfat=
 - add kernel modules from the squashed filesystem to the initrd, for example, to
   support the above mentioned filesystems
@@ -211,7 +211,7 @@ with =--= from the rest):
 
 * Tech details
 
-Ubuntu [[https://manpages.ubuntu.com/manpages/jammy/man7/casper.7.html][casper]]-based iso images (at least since 10.04 for desktop and since 18.04
+Ubuntu casper-based iso images (at least since 10.04 for desktop and since 18.04
 for live server) can boot from the iso file as-is, provided its path with
 =iso-scan/filename= kernel arg. Minimal sample grub config assuming the iso is
 stored in =/boot/iso= on the same filesystem where =/boot/grub= is located:
