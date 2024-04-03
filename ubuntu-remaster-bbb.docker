@@ -29,7 +29,7 @@ EOF
 }
 
 docker_opts=(
-    -t --rm --init
+    -it --rm --init
     -u "${SUDO_UID:-$(id -u)}:${SUDO_GID:-$(id -g)}"
 )
 
