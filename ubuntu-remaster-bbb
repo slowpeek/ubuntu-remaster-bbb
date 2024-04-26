@@ -136,17 +136,18 @@ xorriso_extract_l() {
     osirrox -indev "$iso" -extract_l "$@" -- 2>/dev/null
 }
 
-# Revert xorriso/misc_funct.c:Text_shellsafe(), assuming the pathes do not
-# contain quotes
+# Revert xorriso/misc_funct.c:Text_shellsafe()
 xorriso_unescape() {
     local -n ref=$1
 
     if [[ ${ref@a} == *a* ]]; then
-        ref=("${ref[@]#\'}")
-        ref=("${ref[@]%\'}")
+        ref=("${ref[@]#?}")
+        ref=("${ref[@]%?}")
+        ref=("${ref[@]//"'\"'\"'"/"'"}")
     else
-        ref=${ref#\'}
-        ref=${ref%\'}
+        ref=${ref#?}
+        ref=${ref%?}
+        ref=${ref//"'\"'\"'"/"'"}
     fi
 }
 
