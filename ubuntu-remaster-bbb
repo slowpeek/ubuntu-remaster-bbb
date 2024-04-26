@@ -867,6 +867,7 @@ fi
 xorriso_args=(
     -indev "$iso" -outdev "$iso_out"
     -boot_image any replay
+    -joliet on
     -update "$md5sum_new" /md5sum.txt
     "${xorriso_args[@]}"
 )
