@@ -808,7 +808,10 @@ PATCH
             # Compress the updated main cpio
             pv_fallback "$cpio_new" | "$comp_cmd" "${comp_flags[@]}" -c >> "$initrd_new"
 
-            xorriso_args+=(-update "$initrd_new" "$initrd")
+            xorriso_args+=(
+                -update "$initrd_new" "$initrd"
+                -chown 0 "$initrd" -- -chgrp 0 "$initrd" -- -chmod 0444 "$initrd" --
+            )
 
             initrd_new_md5=$(md5sum "$initrd_new" | cut -d ' ' -f1)
             sed -Ei "/  \\.${initrd//\//\\/}\$/s,^[^ ]+,${initrd_new_md5}," "$md5sum_new"
@@ -870,6 +873,7 @@ xorriso_args=(
     -boot_image any replay
     -joliet on
     -update "$md5sum_new" /md5sum.txt
+    -chown 0 /md5sum.txt -- -chgrp 0 /md5sum.txt -- -chmod 0444 /md5sum.txt --
     "${xorriso_args[@]}"
 )
 
