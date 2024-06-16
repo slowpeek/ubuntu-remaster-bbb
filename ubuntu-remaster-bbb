@@ -872,6 +872,7 @@ xorriso_args=(
     -indev "$iso" -outdev "$iso_out"
     -boot_image any replay
     -joliet on
+    -padding 0
     -update "$md5sum_new" /md5sum.txt
     -chown 0 /md5sum.txt -- -chgrp 0 /md5sum.txt -- -chmod 0444 /md5sum.txt --
     "${xorriso_args[@]}"
