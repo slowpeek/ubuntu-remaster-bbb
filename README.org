@@ -30,7 +30,7 @@ packages to have pre-installed is as such (you likely have some already):
   ubuntu-remaster-bbb [options] input output
 #+end_example
 
-Supported iso versions: =14.04= to =24.04= for desktop, =18.04= to =24.04= for
+Supported iso versions: =14.04= to =24.10= for desktop, =18.04= to =24.10= for
 live-server.
 
 Below =list= stands for a comma separated list of values.
