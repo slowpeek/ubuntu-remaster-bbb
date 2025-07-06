@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2128,SC2178,SC2179
 
-# MIT license (c) 2024 https://github.com/slowpeek
+# MIT license (c) 2024-2025 https://github.com/slowpeek
 # Homepage: https://github.com/slowpeek/ubuntu-remaster-bbb
 
 set -eu -o pipefail
