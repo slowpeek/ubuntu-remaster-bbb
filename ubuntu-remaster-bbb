@@ -479,7 +479,7 @@ if [[ -v task_module ]]; then
         # filesystem.manifest is the biggest one since it lists everything. Sort
         # by size to push it to the bottom
         # shellcheck disable=SC2011
-        squashes=$(ls -Sr -- "$manifests"/* | xargs grep -lF 'linux-modules' |
+        squashes=$(ls -Sr -- "$manifests"/* | xargs grep -lE '^\+?linux-modules' |
                        sed -E 's,^.+/,/casper/,;s,manifest$,squashfs,') || true
 
         if [[ -n $squashes ]]; then
