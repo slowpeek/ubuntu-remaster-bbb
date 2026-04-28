@@ -474,13 +474,24 @@ if [[ -v task_module ]]; then
 
         temp_dir manifests
         # shellcheck disable=SC2154
-        xorriso_extract_l /casper "$manifests" '/casper/*.manifest'
+        if xorriso_extract_l /casper "$manifests" '/casper/*.manifest'; then
+            # filesystem.manifest is the biggest one since it lists everything. Sort
+            # by size to push it to the bottom
+            # shellcheck disable=SC2011
+            squashes=$(ls -Sr -- "$manifests"/* | xargs grep -lE '^\+?linux-modules' |
+                           sed -E 's,^.+/,/casper/,;s,manifest$,squashfs,') || true
+        else
+            # Allow missing manifests if there is only one /casper/*.squashfs
+            squashes=$(xorriso_find /casper -name '*.squashfs')
 
-        # filesystem.manifest is the biggest one since it lists everything. Sort
-        # by size to push it to the bottom
-        # shellcheck disable=SC2011
-        squashes=$(ls -Sr -- "$manifests"/* | xargs grep -lE '^\+?linux-modules' |
-                       sed -E 's,^.+/,/casper/,;s,manifest$,squashfs,') || true
+            [[ -n $squashes ]] ||
+                bye 'No squashfs files under /casper/'
+
+            (( $(wc -l <<< "$squashes") == 1 )) ||
+                bye 'No manifests under /casper/ but more than one squashfs file there'
+
+            xorriso_unescape squashes
+        fi
 
         if [[ -n $squashes ]]; then
             readarray -t modules_squashes <<< "$squashes"
