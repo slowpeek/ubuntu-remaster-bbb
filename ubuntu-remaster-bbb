@@ -702,7 +702,11 @@ PATCH
             squash=${modules_squashes[0]}
             [[ ! $initrd == *hwe* ]] || squash=${modules_squashes[1]}
 
-            lba=$(xorriso_find "$squash" -exec report_lba | tail -n1)
+            # ISO9660 file size limit is 4gb (-1 byte). Bigger files could be
+            # stored as multiple consecutive extents. In the case, xorriso lists
+            # multiple "File data lba: N .." lines. The first one such line is
+            # where the embedded file starts.
+            lba=$(xorriso_find "$squash" -exec report_lba | grep -E '^File data lba' | head -n1)
             read -r _ _ _ _ _ squash_offset _ <<< "$lba"
             (( squash_offset*=2048 ))
 
