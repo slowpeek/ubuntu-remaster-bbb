@@ -161,7 +161,7 @@ not cope with such features.
 *x86_64-efi* target
 
 Signed prebuilt grub images from =grub-efi-amd64-signed= package do [[https://git.launchpad.net/ubuntu/+source/grub2-unsigned/tree/debian/build-efi-images][not]] bundle
-f2fs and exfat modules (as of Q1 2024), so we have to make grub NOT use the
+f2fs and exfat modules (as of Q2 2026), so we have to make grub NOT use the
 images for sure. This way it would not work out-of-the-box when secure boot is
 enabled, but that is out of scope for this doc.
 
@@ -226,8 +226,8 @@ stored in =/boot/iso= on the same filesystem where =/boot/grub= is located:
 
 It just works as long as the filesystem is recognized by casper. Speaking about
 f2fs, initrd in ubuntu iso images bundles the driver since 20.04, but casper
-itself does not include f2fs into its list of supported filesystems (as of Q1
-2024):
+itself does not include f2fs into its list of supported filesystems (as of Q2
+2026):
 
 #+begin_example
   is_supported_fs(){
